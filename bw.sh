@@ -8,7 +8,7 @@
 # Bitwarden CLI wrapper for OpenClaw
 # Works with both official Bitwarden and Vaultwarden servers
 # Usage: bw.sh <command> [args...]
-# Commands: login, unlock, lock, list, get, create, edit, delete, generate, sync, status
+# Commands: register, login, unlock, lock, list, get, create, edit, delete, generate, sync, status
 
 set -euo pipefail
 
@@ -101,10 +101,111 @@ do_login() {
   fi
 }
 
+do_register() {
+  load_creds
+  local reg_email="${1:-$BW_EMAIL}"
+  local reg_pass="${2:-$BW_MASTER_PASSWORD}"
+  local reg_name="${3:-OpenClaw}"
+
+  # Validate inputs
+  if [[ -z "$reg_email" || -z "$reg_pass" ]]; then
+    echo "ERROR: Email and password are required for registration." >&2
+    exit 1
+  fi
+  if [[ ${#reg_pass} -lt 12 ]]; then
+    echo "ERROR: Master password must be at least 12 characters." >&2
+    exit 1
+  fi
+
+  # Registration requires Bitwarden-compatible key derivation:
+  #   1. PBKDF2-SHA256 to derive master key from password + email (salt)
+  #   2. PBKDF2-SHA256 (1 iteration) to derive master password hash for auth
+  #   3. HKDF-Expand to derive encryption key and MAC key from master key
+  #   4. AES-256-CBC + HMAC-SHA256 to encrypt the generated symmetric key
+  # This matches the Bitwarden client key derivation protocol.
+  python3 -c "
+import hashlib, os, base64, hmac as hmac_mod, sys, json
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.kdf.hkdf import HKDFExpand
+from cryptography.hazmat.primitives import hashes, padding as sym_padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+import requests
+
+email = sys.argv[1]
+password = sys.argv[2]
+name = sys.argv[3]
+server = sys.argv[4]
+kdf_iterations = 600000
+
+# Step 1: Derive master key via PBKDF2 (password + lowercase email as salt)
+kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32,
+                  salt=email.lower().encode(), iterations=kdf_iterations,
+                  backend=default_backend())
+master_key = kdf.derive(password.encode())
+
+# Step 2: Derive master password hash (master key + password as salt, 1 iteration)
+kdf2 = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32,
+                   salt=password.encode(), iterations=1,
+                   backend=default_backend())
+master_password_hash = base64.b64encode(kdf2.derive(master_key)).decode()
+
+# Step 3: Derive enc_key and mac_key via HKDF-Expand
+enc_key = HKDFExpand(algorithm=hashes.SHA256(), length=32, info=b'enc',
+                     backend=default_backend()).derive(master_key)
+mac_key = HKDFExpand(algorithm=hashes.SHA256(), length=32, info=b'mac',
+                     backend=default_backend()).derive(master_key)
+
+# Step 4: Generate random 64-byte symmetric key, encrypt with AES-256-CBC
+sym_key = os.urandom(64)
+iv = os.urandom(16)
+padder = sym_padding.PKCS7(128).padder()
+padded = padder.update(sym_key) + padder.finalize()
+encryptor = Cipher(algorithms.AES(enc_key), modes.CBC(iv),
+                   backend=default_backend()).encryptor()
+ct = encryptor.update(padded) + encryptor.finalize()
+
+# Step 5: HMAC the IV + ciphertext for integrity
+mac = hmac_mod.new(mac_key, iv + ct, hashlib.sha256).digest()
+
+# Format: type 2 = AES-CBC-256 + HMAC-SHA256
+encrypted_key = '2.%s|%s|%s' % (
+    base64.b64encode(iv).decode(),
+    base64.b64encode(ct).decode(),
+    base64.b64encode(mac).decode()
+)
+
+# Submit registration
+r = requests.post(f'{server}/api/accounts/register', json={
+    'name': name,
+    'email': email,
+    'masterPasswordHash': master_password_hash,
+    'masterPasswordHint': '',
+    'key': encrypted_key,
+    'kdf': 0,
+    'kdfIterations': kdf_iterations,
+}, timeout=30)
+
+if r.status_code == 200:
+    print('Account registered successfully: ' + email)
+else:
+    # Don't leak full response body - just status
+    try:
+        msg = r.json().get('message', 'Unknown error')
+    except Exception:
+        msg = f'HTTP {r.status_code}'
+    print(f'Registration failed: {msg}', file=sys.stderr)
+    sys.exit(1)
+" "$reg_email" "$reg_pass" "$reg_name" "$BW_SERVER"
+}
+
 cmd="${1:-help}"
 shift || true
 
 case "$cmd" in
+  register)
+    do_register "$@"
+    ;;
   login)
     do_login
     ;;
@@ -190,6 +291,7 @@ Bitwarden CLI Wrapper (works with Bitwarden and Vaultwarden)
 Usage: bw.sh <command> [args...]
 
 Commands:
+  register [email] [pass] [name] Register new account (uses env defaults)
   login                          Login/unlock vault
   status                         Show vault status
   sync                           Sync vault

@@ -102,6 +102,7 @@ bash skills/bitwarden/bw.sh lock
 
 | Command | Description |
 |---------|-------------|
+| `register [email] [pass] [name]` | Register new account on server |
 | `login` | Login & unlock vault |
 | `status` | Show vault status |
 | `sync` | Sync vault with server |
@@ -141,6 +142,15 @@ Contributions welcome! Please ensure no credentials or instance-specific informa
 ## License
 
 MIT License — see [LICENSE](LICENSE).
+
+## Security Improvements in v1.0.3
+
+### Account Registration Support
+- **Added:** `register` command for creating new accounts via API
+- **Crypto:** Uses proper Bitwarden key derivation (PBKDF2 + HKDF-Expand + AES-256-CBC + HMAC-SHA256)
+- **Security:** 12-character minimum password, error messages don't leak server response details
+- **Compatibility:** Works with both official Bitwarden and Vaultwarden servers
+- **Dependencies:** Requires Python `cryptography` and `requests` packages
 
 ## Security Improvements in v1.0.1
 
