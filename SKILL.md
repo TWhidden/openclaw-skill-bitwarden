@@ -8,8 +8,7 @@ metadata:
     requires:
       env: ["BW_SERVER", "BW_EMAIL", "BW_MASTER_PASSWORD"]
       primaryEnv: "BW_SERVER"
-      bins: ["bw", "python3"]
-      pythonPkgs: ["cryptography", "requests"]
+      bins: ["bw", "openssl", "curl"]
       files: ["bw.sh"]
 ---
 
@@ -102,7 +101,7 @@ bash skills/bitwarden/bw.sh register "user@example.com" "SecurePass123!" "Displa
 - Generates a 64-byte symmetric key, encrypted with AES-256-CBC + HMAC-SHA256
 - Submits registration to the server's `/api/accounts/register` endpoint
 
-**Requirements:** Python 3 with `cryptography` and `requests` packages.
+**Requirements:** OpenSSL 3.x+ (for PBKDF2 and HKDF support), curl, xxd.
 
 **Note:** The master password must be at least 12 characters. Works with both official Bitwarden and Vaultwarden servers.
 

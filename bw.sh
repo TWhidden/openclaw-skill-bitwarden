@@ -4,6 +4,7 @@
 # External endpoints called: User-configured BW_SERVER (Bitwarden/Vaultwarden API)
 # Local files read: $CREDS_FILE (default: secrets/bitwarden.env), /tmp/.bw_session
 # Local files written: /tmp/.bw_session (session token cache)
+# Dependencies: bash, openssl (3.x+), curl, bw CLI, xxd, grep, base64
 
 # Bitwarden CLI wrapper for OpenClaw
 # Works with both official Bitwarden and Vaultwarden servers
@@ -82,7 +83,10 @@ do_login() {
   bw config server "$BW_SERVER" >/dev/null 2>&1 || true
 
   local status
-  status=$(bw status 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unauthenticated'))" 2>/dev/null || echo "unauthenticated")
+  # Parse status JSON without python - extract "status":"value" pattern
+  local raw_status
+  raw_status=$(bw status 2>/dev/null || echo '{}')
+  status=$(echo "$raw_status" | grep -oP '"status"\s*:\s*"\K[^"]+' 2>/dev/null || echo "unauthenticated")
 
   if [[ "$status" == "unauthenticated" ]]; then
     local session
@@ -106,6 +110,7 @@ do_register() {
   local reg_email="${1:-$BW_EMAIL}"
   local reg_pass="${2:-$BW_MASTER_PASSWORD}"
   local reg_name="${3:-OpenClaw}"
+  local kdf_iterations=600000
 
   # Validate inputs
   if [[ -z "$reg_email" || -z "$reg_pass" ]]; then
@@ -117,86 +122,90 @@ do_register() {
     exit 1
   fi
 
-  # Registration requires Bitwarden-compatible key derivation:
+  # Pure bash + openssl implementation of Bitwarden key derivation protocol:
   #   1. PBKDF2-SHA256 to derive master key from password + email (salt)
   #   2. PBKDF2-SHA256 (1 iteration) to derive master password hash for auth
   #   3. HKDF-Expand to derive encryption key and MAC key from master key
   #   4. AES-256-CBC + HMAC-SHA256 to encrypt the generated symmetric key
-  # This matches the Bitwarden client key derivation protocol.
-  python3 -c "
-import hashlib, os, base64, hmac as hmac_mod, sys, json
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives.kdf.hkdf import HKDFExpand
-from cryptography.hazmat.primitives import hashes, padding as sym_padding
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
-import requests
 
-email = sys.argv[1]
-password = sys.argv[2]
-name = sys.argv[3]
-server = sys.argv[4]
-kdf_iterations = 600000
+  local email_lower
+  email_lower=$(echo -n "$reg_email" | tr '[:upper:]' '[:lower:]')
 
-# Step 1: Derive master key via PBKDF2 (password + lowercase email as salt)
-kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32,
-                  salt=email.lower().encode(), iterations=kdf_iterations,
-                  backend=default_backend())
-master_key = kdf.derive(password.encode())
+  # Step 1: Master key = PBKDF2-SHA256(password, email_lower, 600000, 32 bytes)
+  local master_key_hex
+  master_key_hex=$(openssl kdf -keylen 32 -kdfopt digest:SHA256 \
+    -kdfopt "pass:$reg_pass" -kdfopt "hexsalt:$(echo -n "$email_lower" | xxd -p | tr -d '\n')" \
+    -kdfopt "iter:$kdf_iterations" -binary PBKDF2 | xxd -p | tr -d '\n')
 
-# Step 2: Derive master password hash (master key + password as salt, 1 iteration)
-kdf2 = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32,
-                   salt=password.encode(), iterations=1,
-                   backend=default_backend())
-master_password_hash = base64.b64encode(kdf2.derive(master_key)).decode()
+  # Step 2: Master password hash = PBKDF2-SHA256(master_key, password, 1, 32) → base64
+  local master_password_hash
+  master_password_hash=$(openssl kdf -keylen 32 -kdfopt digest:SHA256 \
+    -kdfopt "hexpass:$master_key_hex" \
+    -kdfopt "hexsalt:$(echo -n "$reg_pass" | xxd -p | tr -d '\n')" \
+    -kdfopt "iter:1" -binary PBKDF2 | base64 -w0)
 
-# Step 3: Derive enc_key and mac_key via HKDF-Expand
-enc_key = HKDFExpand(algorithm=hashes.SHA256(), length=32, info=b'enc',
-                     backend=default_backend()).derive(master_key)
-mac_key = HKDFExpand(algorithm=hashes.SHA256(), length=32, info=b'mac',
-                     backend=default_backend()).derive(master_key)
+  # Step 3: HKDF-Expand to derive enc_key (32 bytes) and mac_key (32 bytes)
+  local enc_key_hex mac_key_hex
+  enc_key_hex=$(openssl kdf -keylen 32 -kdfopt digest:SHA256 \
+    -kdfopt mode:EXPAND_ONLY \
+    -kdfopt "hexkey:$master_key_hex" \
+    -kdfopt "hexinfo:$(echo -n 'enc' | xxd -p | tr -d '\n')" \
+    -binary HKDF | xxd -p | tr -d '\n')
 
-# Step 4: Generate random 64-byte symmetric key, encrypt with AES-256-CBC
-sym_key = os.urandom(64)
-iv = os.urandom(16)
-padder = sym_padding.PKCS7(128).padder()
-padded = padder.update(sym_key) + padder.finalize()
-encryptor = Cipher(algorithms.AES(enc_key), modes.CBC(iv),
-                   backend=default_backend()).encryptor()
-ct = encryptor.update(padded) + encryptor.finalize()
+  mac_key_hex=$(openssl kdf -keylen 32 -kdfopt digest:SHA256 \
+    -kdfopt mode:EXPAND_ONLY \
+    -kdfopt "hexkey:$master_key_hex" \
+    -kdfopt "hexinfo:$(echo -n 'mac' | xxd -p | tr -d '\n')" \
+    -binary HKDF | xxd -p | tr -d '\n')
 
-# Step 5: HMAC the IV + ciphertext for integrity
-mac = hmac_mod.new(mac_key, iv + ct, hashlib.sha256).digest()
+  # Step 4: Generate 64-byte random symmetric key, encrypt with AES-256-CBC
+  local sym_key_hex iv_hex ct_b64 iv_b64
+  sym_key_hex=$(openssl rand -hex 64)
+  iv_hex=$(openssl rand -hex 16)
 
-# Format: type 2 = AES-CBC-256 + HMAC-SHA256
-encrypted_key = '2.%s|%s|%s' % (
-    base64.b64encode(iv).decode(),
-    base64.b64encode(ct).decode(),
-    base64.b64encode(mac).decode()
-)
+  # AES-256-CBC encrypt (PKCS7 padding is default in openssl enc)
+  ct_b64=$(echo -n "$sym_key_hex" | xxd -r -p | \
+    openssl enc -aes-256-cbc -nosalt -K "$enc_key_hex" -iv "$iv_hex" | base64 -w0)
 
-# Submit registration
-r = requests.post(f'{server}/api/accounts/register', json={
-    'name': name,
-    'email': email,
-    'masterPasswordHash': master_password_hash,
-    'masterPasswordHint': '',
-    'key': encrypted_key,
-    'kdf': 0,
-    'kdfIterations': kdf_iterations,
-}, timeout=30)
+  iv_b64=$(echo -n "$iv_hex" | xxd -r -p | base64 -w0)
 
-if r.status_code == 200:
-    print('Account registered successfully: ' + email)
-else:
-    # Don't leak full response body - just status
-    try:
-        msg = r.json().get('message', 'Unknown error')
-    except Exception:
-        msg = f'HTTP {r.status_code}'
-    print(f'Registration failed: {msg}', file=sys.stderr)
-    sys.exit(1)
-" "$reg_email" "$reg_pass" "$reg_name" "$BW_SERVER"
+  # Step 5: HMAC-SHA256(iv || ciphertext, mac_key) for integrity
+  local mac_b64
+  mac_b64=$( (echo -n "$iv_hex" | xxd -r -p; echo -n "$ct_b64" | base64 -d) | \
+    openssl dgst -sha256 -mac hmac -macopt "hexkey:$mac_key_hex" -binary | base64 -w0)
+
+  # Format: type 2 = AES-CBC-256 + HMAC-SHA256
+  local encrypted_key="2.${iv_b64}|${ct_b64}|${mac_b64}"
+
+  # Submit registration via curl
+  local response http_code body
+  response=$(curl -s -w "\n%{http_code}" -X POST \
+    "${BW_SERVER}/api/accounts/register" \
+    -H "Content-Type: application/json" \
+    -d "$(cat <<JSON
+{
+  "name": "$reg_name",
+  "email": "$reg_email",
+  "masterPasswordHash": "$master_password_hash",
+  "masterPasswordHint": "",
+  "key": "$encrypted_key",
+  "kdf": 0,
+  "kdfIterations": $kdf_iterations
+}
+JSON
+)" --max-time 30)
+
+  http_code=$(echo "$response" | tail -1)
+  body=$(echo "$response" | sed '$d')
+
+  if [[ "$http_code" == "200" ]]; then
+    echo "Account registered successfully: $reg_email"
+  else
+    local msg
+    msg=$(echo "$body" | grep -oP '"message"\s*:\s*"\K[^"]+' 2>/dev/null || echo "HTTP $http_code")
+    echo "Registration failed: $msg" >&2
+    exit 1
+  fi
 }
 
 cmd="${1:-help}"
