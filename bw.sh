@@ -18,9 +18,27 @@ CREDS_FILE="${CREDS_FILE:-${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}/secre
 SESSION_FILE="/tmp/.bw_session"
 
 load_creds() {
+  # SECURITY: Safe KEY=VALUE parsing without executing arbitrary shell code
   if [[ -f "$CREDS_FILE" ]]; then
-    source "$CREDS_FILE"
+    while IFS='=' read -r key value; do
+      # Skip comments and empty lines
+      [[ "$key" =~ ^[[:space:]]*# ]] && continue
+      [[ -z "$key" ]] && continue
+      # Strip quotes and whitespace
+      value="${value%\"}"
+      value="${value#\"}"
+      value="${value%\'}"
+      value="${value#\'}"
+      key="${key//[[:space:]]/}"
+      # Export only expected variables
+      case "$key" in
+        BW_SERVER|BW_EMAIL|BW_MASTER_PASSWORD)
+          export "$key=$value"
+          ;;
+      esac
+    done < "$CREDS_FILE"
   fi
+  
   if [[ -z "${BW_SERVER:-}" ]]; then
     echo "ERROR: BW_SERVER not set. Configure via environment or credentials file." >&2
     exit 1

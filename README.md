@@ -141,3 +141,19 @@ Contributions welcome! Please ensure no credentials or instance-specific informa
 ## License
 
 MIT License — see [LICENSE](LICENSE).
+
+## Security Improvements in v1.0.1
+
+### Safe Credential Loading
+- **Fixed:** Replaced dangerous `source` command with safe KEY=VALUE parsing
+- **Impact:** Credential files can no longer execute arbitrary shell code
+- **Details:** The script now safely parses only `BW_SERVER`, `BW_EMAIL`, and `BW_MASTER_PASSWORD` variables from the credentials file, ignoring any other content or shell commands
+
+### Declared Dependencies
+- **Added:** Explicit declaration of required binaries (`bw`, `python3`) in SKILL.md metadata
+- **Impact:** ClawHub and OpenClaw can now properly validate dependencies before installation
+- **Details:** Updated `metadata.clawdbot.requires.bins` to include all required system binaries
+
+### Security Scan
+- **Status:** Addresses all concerns raised in ClawHub security scan
+- **Report:** https://clawhub.ai/skills/twhidden-bitwarden (scan results available)

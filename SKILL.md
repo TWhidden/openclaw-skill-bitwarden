@@ -8,6 +8,7 @@ metadata:
     requires:
       env: ["BW_SERVER", "BW_EMAIL", "BW_MASTER_PASSWORD"]
       primaryEnv: "BW_SERVER"
+      bins: ["bw", "python3"]
       files: ["bw.sh"]
 ---
 
