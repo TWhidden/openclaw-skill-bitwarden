@@ -1,6 +1,6 @@
 ---
-name: bitwarden
-description: Bitwarden password manager integration. Use when storing, retrieving, generating, or managing passwords and credentials. Wraps the Bitwarden CLI (bw) with automatic session management. Works with both official Bitwarden and Vaultwarden servers.
+name: bitwarden-vaultwarden
+description: Bitwarden & Vaultwarden password manager integration. Use when storing, retrieving, generating, or managing passwords and credentials. Wraps the Bitwarden CLI (bw) with automatic session management. Works with both official Bitwarden and self-hosted Vaultwarden servers.
 homepage: https://github.com/TWhidden/openclaw-skill-bitwarden
 metadata:
   clawdbot:
@@ -12,9 +12,9 @@ metadata:
       files: ["bw.sh"]
 ---
 
-# Bitwarden
+# Bitwarden & Vaultwarden
 
-Bitwarden CLI (`bw`) wrapper with automatic login, session caching, and convenient commands.
+Bitwarden/Vaultwarden CLI (`bw`) wrapper with automatic login, session caching, and convenient commands. Works seamlessly with both official Bitwarden (vault.bitwarden.com) and self-hosted Vaultwarden instances.
 
 ## Requirements
 

@@ -1,4 +1,4 @@
-# Bitwarden Skill for OpenClaw
+# Bitwarden & Vaultwarden Password Manager Skill
 
 An [OpenClaw](https://openclaw.dev) skill for [Bitwarden](https://bitwarden.com/) password management. Wraps the [Bitwarden CLI](https://bitwarden.com/help/cli/) with automatic session management.
 
