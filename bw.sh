@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# SECURITY MANIFEST:
+# Environment variables accessed: BW_SERVER, BW_EMAIL, BW_MASTER_PASSWORD, CREDS_FILE (optional)
+# External endpoints called: User-configured BW_SERVER (Bitwarden/Vaultwarden API)
+# Local files read: $CREDS_FILE (default: secrets/bitwarden.env), /tmp/.bw_session
+# Local files written: /tmp/.bw_session (session token cache)
+
 # Bitwarden CLI wrapper for OpenClaw
 # Works with both official Bitwarden and Vaultwarden servers
 # Usage: bw.sh <command> [args...]

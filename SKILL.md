@@ -1,6 +1,14 @@
 ---
 name: bitwarden
 description: Bitwarden password manager integration. Use when storing, retrieving, generating, or managing passwords and credentials. Wraps the Bitwarden CLI (bw) with automatic session management. Works with both official Bitwarden and Vaultwarden servers.
+homepage: https://github.com/TWhidden/openclaw-skill-bitwarden
+metadata:
+  clawdbot:
+    emoji: "🔐"
+    requires:
+      env: ["BW_SERVER", "BW_EMAIL", "BW_MASTER_PASSWORD"]
+      primaryEnv: "BW_SERVER"
+      files: ["bw.sh"]
 ---
 
 # Bitwarden
@@ -79,3 +87,43 @@ bash skills/bitwarden/bw.sh create "New Service" "user@email.com" "$PASS" "https
 - Keep `bitwarden.env` out of version control.
 - Use `chmod 600` on credential files.
 - Session tokens are stored in `/tmp` and cleared on lock/logout.
+
+## External Endpoints
+
+| Endpoint | Purpose | Data Sent |
+|----------|---------|-----------|
+| User-configured BW_SERVER | Bitwarden/Vaultwarden API | Encrypted vault data, authentication credentials |
+
+**Note:** The skill communicates with the Bitwarden server you configure via `BW_SERVER`. For official Bitwarden, this is `https://vault.bitwarden.com`. For Vaultwarden, this is your self-hosted instance URL.
+
+## Security & Privacy
+
+**What leaves your machine:**
+- Authentication requests (email, master password) to your configured Bitwarden server
+- Encrypted vault data (create/read/update/delete operations)
+- All communication uses HTTPS/TLS
+
+**What stays local:**
+- Session tokens (cached in `/tmp/.bw_session`)
+- Credential files (if using `bitwarden.env`)
+- Decrypted passwords (only in memory, never written to disk)
+
+**Trust statement:**
+By using this skill, you are sending authentication credentials and vault data to the Bitwarden server you configure. Only install this skill if you trust your Bitwarden/Vaultwarden instance.
+
+## Model Invocation
+
+This skill can be invoked autonomously by your OpenClaw agent when it needs to:
+- Store credentials securely
+- Retrieve passwords for automation tasks
+- Generate secure passwords
+
+If you prefer manual approval before password operations, configure your OpenClaw agent's tool policy accordingly.
+
+## Security Best Practices
+
+1. **Credentials file:** Use `chmod 600` on `secrets/bitwarden.env`
+2. **Environment isolation:** Don't share credential files across systems
+3. **Session tokens:** Automatically expire; run `bw.sh lock` when done
+4. **Git:** The `.gitignore` excludes all secrets (`secrets/`, `*.env`, `.bw_session`)
+5. **Master password:** Never hardcode or log your master password
