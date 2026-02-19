@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.5 (2026-02-18)
+
+### Changed
+- **Fixed title/branding** — Display name is now "Bitwarden / Vaultwarden" (removed "TWhidden" from title)
+- **Addressed security concerns** — Added security manifest header to bw.sh, improved documentation
+- **Added ClawHub link** to GitHub README
+
 ## v1.0.4 (2026-02-18)
 
 ### Changed

@@ -1,5 +1,5 @@
 ---
-name: bitwarden-vaultwarden
+name: Bitwarden / Vaultwarden
 description: Bitwarden & Vaultwarden password manager integration. Use when storing, retrieving, generating, or managing passwords and credentials. Wraps the Bitwarden CLI (bw) with automatic session management. Works with both official Bitwarden and self-hosted Vaultwarden servers.
 homepage: https://github.com/TWhidden/openclaw-skill-bitwarden
 metadata:

@@ -1,8 +1,12 @@
-# Bitwarden & Vaultwarden Password Manager Skill
+# Bitwarden / Vaultwarden — Password Manager Skill
+
+[![ClawHub](https://img.shields.io/badge/ClawHub-twhidden--bitwarden-blue)](https://clawhub.ai/skills/twhidden-bitwarden)
 
 An [OpenClaw](https://openclaw.dev) skill for [Bitwarden](https://bitwarden.com/) password management. Wraps the [Bitwarden CLI](https://bitwarden.com/help/cli/) with automatic session management.
 
 **Works with both official Bitwarden and [Vaultwarden](https://github.com/dani-garcia/vaultwarden) (self-hosted).**
+
+**📦 Install from ClawHub:** [`clawhub install twhidden-bitwarden`](https://clawhub.ai/skills/twhidden-bitwarden)
 
 ## Features
 
